@@ -56,14 +56,14 @@ func wheel*(primes: openarray[int32]): seq[uint8] =
   let nextTurn = wheelCircumference + wheelCoprimes[0] - wheelCoprimes[^1]
   result.add uint8(nextTurn)
 
-iterator listFactorize*(n: var int32, primes: seq[int32]): int32 =
+iterator listFactorize*(n: var int32, primes: openarray[int32]): int32 =
   ## Factorize via a list of primes
   for prime in primes:
     while n mod prime == 0:
       yield prime
       n = n div prime
 
-iterator wheelFactorize*(n: int32, firstNextPrime: int32, wheel: seq[uint8]): int32 =
+iterator wheelFactorize*(n: int32, firstNextPrime: int32, wheel: openarray[uint8]): int32 =
   ## Factorize n using wheel factorization
   ## Assuming a 2-3-5 wheel, `firstNextPrime` should be 7
   ## Assuming a 2-3-5-7 wheel, `firstNextPrime` should be 11

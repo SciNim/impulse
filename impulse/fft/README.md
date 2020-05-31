@@ -6,6 +6,12 @@ Discrete Cosine Transform and Discrete Sine Transform for both 1D and multidimen
 Note for real-time audio: at the moment, computation is optimized for throughput not latency
 and in particular uses dynamic memory allocation
 
+We follow the PocketFFT algorithms which in turn follow
+FFTPACK which is described in "fftalgorithm.pdf" and the non-available papers from Clive Tamperton.
+
+In the future once/if we get a compiler for high-performance computing
+this will be reimplemented using that compiler.
+
 ## High-level
 
 - http://betterexplained.com/articles/an-interactive-guide-to-the-fourier-transform/
@@ -23,6 +29,10 @@ and in particular uses dynamic memory allocation
 - https://math.mit.edu/~stevenj/18.335/FFTW-Alan-2008.pdf
 - https://cnx.org/contents/ulXtQbN7@15/Implementing-FFTs-in-Practice
 - https://cnx.org/exports/82e6ba6f-b828-42ef-9db1-8de4b448b869@22.1.pdf/fast-fourier-transforms-22.1.pdf
+- https://gitlab.mpcdf.mpg.de/mtr/pocketfft
+
+Via the Halide compiler:
+- https://github.com/halide/Halide/tree/master/apps/fft
 
 ### Non-available PDFs
 - https://www.researchgate.net/publication/222446662_Fast_mixed-radix_real_Fourier_transforms
