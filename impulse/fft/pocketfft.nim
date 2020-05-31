@@ -42,7 +42,7 @@ proc c2c[T: SomeFloat](
     dataOut: ptr UncheckedArray[CppComplex[T]],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::c2c(@)", pocket.}
+  ) {.importcpp: "pocketfft::c2c(@)", pocket, cdecl.}
 
 proc r2c[T: SomeFloat](
     shape: Shape,
@@ -54,7 +54,7 @@ proc r2c[T: SomeFloat](
     dataOut: ptr UncheckedArray[CppComplex[T]],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::r2c(@)", pocket.}
+  ) {.importcpp: "pocketfft::r2c(@)", pocket, cdecl.}
 
 proc c2r[T: SomeFloat](
     shape: Shape,
@@ -66,7 +66,7 @@ proc c2r[T: SomeFloat](
     dataOut: ptr T or ptr UncheckedArray[T],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::c2r(@)", pocket.}
+  ) {.importcpp: "pocketfft::c2r(@)", pocket, cdecl.}
 
 proc r2r_fftpack[T: SomeFloat](
     shape: Shape,
@@ -79,7 +79,7 @@ proc r2r_fftpack[T: SomeFloat](
     dataOut: ptr T or ptr UncheckedArray[T],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::r2r_fftpack(@)", pocket.}
+  ) {.importcpp: "pocketfft::r2r_fftpack(@)", pocket, cdecl.}
 
 proc r2r_separable_hartley[T: SomeFloat](
     shape: Shape,
@@ -91,7 +91,7 @@ proc r2r_separable_hartley[T: SomeFloat](
     dataOut: ptr T or ptr UncheckedArray[T],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::r2r_separable_hartley(@)", pocket.}
+  ) {.importcpp: "pocketfft::r2r_separable_hartley(@)", pocket, cdecl.}
 
 proc r2r_genuine_hartley[T: SomeFloat](
     shape: Shape,
@@ -103,7 +103,7 @@ proc r2r_genuine_hartley[T: SomeFloat](
     dataOut: ptr T or ptr UncheckedArray[T],
     fct: T,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::r2r_genuine_hartley(@)", pocket.}
+  ) {.importcpp: "pocketfft::r2r_genuine_hartley(@)", pocket, cdecl.}
 
 proc dct[T: SomeFloat](
     shape: Shape,
@@ -116,7 +116,7 @@ proc dct[T: SomeFloat](
     fct: T,
     ortho: bool,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::dct(@)", pocket.}
+  ) {.importcpp: "pocketfft::dct(@)", pocket, cdecl.}
 
 proc dst[T: SomeFloat](
     shape: Shape,
@@ -129,29 +129,36 @@ proc dst[T: SomeFloat](
     fct: T,
     ortho: bool,
     nthreads: uint = 1
-  ) {.importcpp: "pocketfft::dst(@)", pocket.}
+  ) {.importcpp: "pocketfft::dst(@)", pocket, cdecl.}
 
 # High-level API
 # ------------------------------------------------------
 
 type
-  FFTDataDescriptor*[T] = object
+  DataDesc*[T] = object
     ## Descriptor of the data used in or out of the FFT
     shape: Shape
     stride: Stride
     buf: ptr UncheckedArray[T]
 
-  FFTDescriptor[T] = object
+  FFTDesc[T] = object
     ## Descriptor of the FFT
     axes: Shape
     scalingFactor: T
     nthreads: uint
     forward: bool
 
-func init*[T](_: type FFTDataDescriptor[T],
+  DCTDesc[T] = object
+    axes: Shape
+    dctType: range[1'i32..4'i32]
+    scalingFactor: T
+    nthreads: uint
+    ortho: bool
+
+func init*[T](_: type DataDesc[T],
               buffer: ptr T or ptr UncheckedArray[T],
               shape, stride: distinct openArray[SomeInteger]
-             ): FFTDataDescriptor[T] =
+             ): DataDesc[T] {.inline.} =
   ## Initialize a description of the input or output data
   ## from the `shape`, `stride` and `buffer` passed in.
   assert shape.len = stride.len
@@ -166,10 +173,10 @@ func init*[T](_: type FFTDataDescriptor[T],
 
   result.buf = cast[ptr UncheckedArray[T]](buffer)
 
-func init*[T](_: type FFTDataDescriptor[T],
+func init*[T](_: type DataDesc[T],
               buffer: ptr T or ptr UncheckedArray[T],
               shape: openArray[SomeInteger],
-             ): FFTDataDescriptor[T] =
+             ): DataDesc[T] {.inline.} =
   ## Initialize a description of the input or output data
   ## from the `shape` and `buffer` passed in.
   ## The data is assumed to be stored in
@@ -189,12 +196,12 @@ func init*[T](_: type FFTDataDescriptor[T],
 
   result.buf = cast[ptr UncheckedArray[T]](buffer)
 
-func init*[T](_: type FFTDescriptor[T],
+func init*[T](_: type FFTDesc[T],
               axes: varargs[int],
               forward: bool,
-              scalingFactor = T(1),
+              scalingFactor: T = 1,
               nthreads = 1
-             ): FFTDescriptor[T] =
+             ): FFTDesc[T] {.inline.} =
   ## Initialize a description of the FFT
   ## Set `nthreads` to 0 to use all your available cores
   ## Multithreading is only implemented for multidimensional FFT
@@ -205,11 +212,29 @@ func init*[T](_: type FFTDescriptor[T],
   result.forward = forward
   result.nthreads = uint nthreads
 
+func init*[T](_: type DCTDesc[T],
+              axes: varargs[int],
+              dctType: range[1'i32..4'i32] = 2'i32,
+              ortho = false,
+              scalingFactor: T = 1,
+              nthreads = 1
+             ): DCTDesc[T] {.inline.} =
+  ## Initialize a description of the Discrete CosineTransform
+  ## Set `nthreads` to 0 to use all your available cores
+  ## Multithreading is only implemented for multidimensional FFT
+  result.axes = newCppVector[uint](axes.len)
+  for i in 0 ..< axes.len:
+    result.axes[i] = uint axes[i]
+  result.dctType = dctType
+  result.ortho = ortho
+  result.scalingFactor = scalingFactor
+  result.nthreads = uint nthreads
+
 func apply*[In, Out](
-      fft: FFTDescriptor,
-      descOut: var FFTDataDescriptor[Out],
-      descIn: FFTDataDescriptor[In],
-     ) =
+      fft: FFTDesc,
+      descOut: var DataDesc[Out],
+      descIn: DataDesc[In],
+     ) {.inline.} =
   when In is Complex and Out is Complex:
     c2c(
       descIn.shape,
@@ -234,29 +259,79 @@ func apply*[In, Out](
       fft.scalingFactor,
       fft.nthreads
     )
+  elif In is Complex:
+    c2r(
+      descIn.shape,
+      descIn.stride,
+      descOut.stride,
+      fft.axes,
+      fft.forward,
+      cast[ptr UncheckedArray[CppComplex[Out.T]]](descIn.buf),
+      descOut.buf,
+      fft.scalingFactor,
+      fft.nthreads
+    )
   else:
     {.error: "Not implemented".}
+
+func apply*[In, Out](
+      dct: DCTDesc,
+      descOut: var DataDesc[Out],
+      descIn: DataDesc[In],
+     ) {.inline.} =
+  dct(
+    descIn.shape,
+    descIn.stride,
+    descOut.stride,
+    dct.axes,
+    dct.dctType,
+    descIn.buf,
+    descOut.buf,
+    dct.scalingFactor,
+    dct.ortho,
+    dct.nthreads
+  )
 
 # Sanity checks
 # ------------------------------------------------------
 
 when isMainModule:
 
-  let dIn = @[1.0, 2.0, 1.0, -1.0, 1.5]
-  var dOut = newSeq[Complex[float64]](dIn.len)
+  block:
+    let dIn = @[1.0, 2.0, 1.0, -1.0, 1.5]
+    var dOut = newSeq[Complex[float64]](dIn.len)
 
-  let dInDesc = FFTDataDescriptor[float64].init(
-    dIn[0].unsafeAddr, [dIn.len]
-  )
-  var dOutDesc = FFTDataDescriptor[Complex[float64]].init(
-    dOut[0].addr, [dOut.len]
-  )
+    let dInDesc = DataDesc[float64].init(
+      dIn[0].unsafeAddr, [dIn.len]
+    )
+    var dOutDesc = DataDesc[Complex[float64]].init(
+      dOut[0].addr, [dOut.len]
+    )
 
-  let fft = FFTDescriptor[float64].init(
-    axes = [0],
-    forward = true
-  )
+    let fft = FFTDesc[float64].init(
+      axes = [0],
+      forward = true
+    )
 
-  fft.apply(dOutDesc, dInDesc)
-  echo dIn
-  echo dOut
+    fft.apply(dOutDesc, dInDesc)
+    echo dIn
+    echo dOut
+
+  block:
+    let dIn = @[4.0, 3.0, 5.0, 10.0]
+    var dOut = newSeq[float64](dIn.len)
+
+    let dInDesc = DataDesc[float64].init(
+      dIn[0].unsafeAddr, [dIn.len]
+    )
+    var dOutDesc = DataDesc[float64].init(
+      dOut[0].addr, [dOut.len]
+    )
+
+    let dct = DCTDesc[float64].init(
+      axes = [0]
+    )
+
+    dct.apply(dOutDesc, dInDesc)
+    echo dIn
+    echo dOut
