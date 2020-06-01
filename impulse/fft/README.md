@@ -6,7 +6,11 @@ Discrete Cosine Transform and Discrete Sine Transform for both 1D and multidimen
 Note for real-time audio: at the moment, computation is optimized for throughput not latency
 and in particular uses dynamic memory allocation
 
-We follow the PocketFFT algorithms which in turn follow
+We currently use PocketFFT.
+
+Commit 49b813232507470a047727712acda105b84c7815
+has an initial pure Nim implementation that follows
+the PocketFFT algorithms which in turn follow
 FFTPACK which is described in "fftalgorithm.pdf" and the non-available papers from Clive Tamperton.
 
 In the future once/if we get a compiler for high-performance computing
