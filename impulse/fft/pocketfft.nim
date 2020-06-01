@@ -161,6 +161,8 @@ func init*[T](_: type DataDesc[T],
              ): DataDesc[T] {.inline.} =
   ## Initialize a description of the input or output data
   ## from the `shape`, `stride` and `buffer` passed in.
+  ## stride is the distance in elements T between elements
+  ## on the same axis
   assert shape.len = stride.len
   assert not buffer.isNil
 
@@ -169,7 +171,7 @@ func init*[T](_: type DataDesc[T],
 
   for i in 0 ..< shape.len:
     result.shape[i] = uint(shape[i])
-    result.stride[i] = int(stride[i])
+    result.stride[i] = int(stride[i] * sizeof(T))
 
   result.buf = cast[ptr UncheckedArray[T]](buffer)
 
@@ -186,7 +188,7 @@ func init*[T](_: type DataDesc[T],
   result.shape = newCppVector[uint](shape.len)
   result.stride = newCppVector[int](shape.len)
 
-  var accum = 1
+  var accum = 1 * sizeof(T)
   for i in countdown(shape.len-1, 0):
     result.stride[i] = int(accum)
     accum *= shape[i]
@@ -297,7 +299,7 @@ func apply*[In, Out](
 
 when isMainModule:
 
-  block:
+  block: # https://docs.scipy.org/doc/scipy/reference/tutorial/fft.html#id10
     let dIn = @[1.0, 2.0, 1.0, -1.0, 1.5]
     var dOut = newSeq[Complex[float64]](dIn.len)
 
@@ -317,7 +319,7 @@ when isMainModule:
     echo dIn
     echo dOut
 
-  block:
+  block: # https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.dct.html
     let dIn = @[4.0, 3.0, 5.0, 10.0]
     var dOut = newSeq[float64](dIn.len)
 
