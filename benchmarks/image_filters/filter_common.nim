@@ -41,10 +41,14 @@ proc newRandomImage*(width, height: int, T: typedesc[SomeFloat]): Image[T] =
 
 {.push inline, noInit.}
 
-func `[]`*[T](image: Image[T], h, w: int): Color[T] =
+func `[]`*[T](image: Image[T] or ptr Image[T], h, w: int): Color[T] =
   result = image.buf[h*image.width + w]
 
 func `[]=`*[T](image: var Image[T], h, w: int, c: Color[T]) =
+  image.buf[h*image.width + w] = c
+
+
+func `[]=`*[T](image: ptr Image[T], h, w: int, c: Color[T]) =
   image.buf[h*image.width + w] = c
 
 func `+`*[T](c, d: Color[T]): Color[T] =
@@ -128,8 +132,10 @@ else:
   echo "\nCompiled with an unknown compiler"
 
 echo "Optimization level => no optimization: ", not defined(release), " | release: ", defined(release), " | danger: ", defined(danger)
-echo "\n\n"
-echo &"""{"Name":<30} {"throughput":>15} (ops/s)       {"average time":>9} (ms/op)"""
+
+proc header*() =
+  echo "\n\n"
+  echo &"""{"Name":<30} {"throughput":>15} (ops/s)       {"average time":>9} (ms/op)"""
 
 proc separator*() =
   echo "-".repeat(110)

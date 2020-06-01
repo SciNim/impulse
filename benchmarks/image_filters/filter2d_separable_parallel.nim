@@ -6,6 +6,8 @@
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 
 import
+  # 3rd party
+  weave,
   ./filter_common
 
 # Benchmark multiple implementations of separable 2D filters
@@ -33,7 +35,7 @@ import
 #
 # Reference paper: https://hal.inria.fr/hal-01094906/document
 
-func filter2D_reference[T](imOut: var Image[T], imIn: Image[T]) =
+proc filter2D_reference[T](imOut: var Image[T], imIn: Image[T]) =
   # Naive hardcoded application of
   # | 1 2 1 |
   # | 2 4 2 |
@@ -43,24 +45,32 @@ func filter2D_reference[T](imOut: var Image[T], imIn: Image[T]) =
 
   let normalization = 1.T / 16.T
 
-  for i in 1 ..< imOut.height-1:
-    for j in 1 ..< imOut.width-1: # Note: the paper is skipping every 3 columns
-      let a0 = imIn[i-1, j-1]; let b0 = imIn[i-1, j  ]; let c0 = imIn[i-1, j+1]
-      let a1 = imIn[i  , j-1]; let b1 = imIn[i  , j  ]; let c1 = imIn[i  , j+1]
-      let a2 = imIn[i+1, j-1]; let b2 = imIn[i+1, j  ]; let c2 = imIn[i+1, j+1]
+  # TODO: there is an extra pointer indirection here
+  let pImgIn = imIn.unsafeAddr
+  let pImgOut = imOut.addr
+
+  parallelFor i in 1 ..< imOut.height-1:
+    captures: {pImgIn, pImgOut, normalization}
+    parallelFor j in 1 ..< pImgOut.width-1: # Note: the paper is skipping every 3 columns
+      captures: {i, pImgIn, pImgOut, normalization}
+      let a0 = pImgIn[i-1, j-1]; let b0 = pImgIn[i-1, j  ]; let c0 = pImgIn[i-1, j+1]
+      let a1 = pImgIn[i  , j-1]; let b1 = pImgIn[i  , j  ]; let c1 = pImgIn[i  , j+1]
+      let a2 = pImgIn[i+1, j-1]; let b2 = pImgIn[i+1, j  ]; let c2 = pImgIn[i+1, j+1]
 
       let s = 1.T * a0 + 2.T * b0 + 1.T * c0 +
               2.T * a1 + 4.T * b1 + 2.T * c1 +
               1.T * a2 + 2.T * b2 + 1.T * c2
 
-      imOut[i, j] = s * normalization
+      pImgOut[i, j] = s * normalization
+
+  syncRoot(Weave)
 
   # Perf note:
   # - The RGB layout makes it hard to use more than 3 out of 4 vector lanes (for SSE/Neon) or 3 out of 8 vector lanes (for AVX)
   # - `s` computation is serialized unless using fast-math because floating-point addition is not asociative
   # - Along `i` data is loaded multiple times, if width is large it's flushed and reloaded from cache and is inefficient
 
-func filter2D_reg_rotation[T](imOut: var Image[T], imIn: Image[T]) =
+proc filter2D_reg_rotation[T](imOut: var Image[T], imIn: Image[T]) =
   # Naive hardcoded application of
   # | 1 2 1 |
   # | 2 4 2 |
@@ -70,27 +80,36 @@ func filter2D_reg_rotation[T](imOut: var Image[T], imIn: Image[T]) =
 
   let normalization = 1.T / 16.T
 
-  for i in 1 ..< imOut.height-1:
-    let j = 1
-    var a0 = imIn[i-1, j-1]; var b0 = imIn[i-1, j]
-    var a1 = imIn[i  , j-1]; var b1 = imIn[i  , j]
-    var a2 = imIn[i+1, j-1]; var b2 = imIn[i+1, j]
+  # TODO: there is an extra pointer indirection here
+  let pImgIn = imIn.unsafeAddr
+  let pImgOut = imOut.addr
 
-    for j in 1 ..< imOut.width-1: # Note: the paper is skipping every 3 columns
-      let c0 = imIn[i-1, j+1]
-      let c1 = imIn[i  , j+1]
-      let c2 = imIn[i+1, j+1]
+  parallelFor i in 1 ..< imOut.height-1:
+    captures: {pImgIn, pImgOut, normalization}
+    let j = 1
+    var a0 = pImgIn[i-1, j-1]; var b0 = pImgIn[i-1, j]
+    var a1 = pImgIn[i  , j-1]; var b1 = pImgIn[i  , j]
+    var a2 = pImgIn[i+1, j-1]; var b2 = pImgIn[i+1, j]
+
+    for j in 1 ..< pImgOut.width-1: # Note: the paper is skipping every 3 columns
+      loadBalance(Weave)
+
+      let c0 = pImgIn[i-1, j+1]
+      let c1 = pImgIn[i  , j+1]
+      let c2 = pImgIn[i+1, j+1]
 
       let s = 1.T * a0 + 2.T * b0 + 1.T * c0 +
               2.T * a1 + 4.T * b1 + 2.T * c1 +
               1.T * a2 + 2.T * b2 + 1.T * c2
-      imOut[i, j] = s * normalization
+      pImgOut[i, j] = s * normalization
 
       a0 = b0; b0 = c0 # Rotation
       a1 = b1; b1 = c1 # Rotation
       a2 = b2; b2 = c2 # Rotation
 
-func filter2D_rotation_separable[T](imOut: var Image[T], imIn: Image[T], kernel: static array[3, T]) =
+  syncRoot(Weave)
+
+proc filter2D_rotation_separable[T](imOut: var Image[T], imIn: Image[T], kernel: static array[3, T]) =
   #                               | 1 |
   # can be applied as | 1 2 1 | * | 2 |
   #                               | 1 |
@@ -101,27 +120,35 @@ func filter2D_rotation_separable[T](imOut: var Image[T], imIn: Image[T], kernel:
       normalization += val0 * val1
   normalization = 1.0.T / normalization
 
+  # TODO: there is an extra pointer indirection here
+  let pImgIn = imIn.unsafeAddr
+  let pImgOut = imOut.addr
 
-  for i in 1 ..< imOut.height-1:
+  parallelFor i in 1 ..< imOut.height-1:
+    captures: {pImgIn, pImgOut, normalization}
     let j = 1
-    var a0 = imIn[i-1, j-1]; var b0 = imIn[i-1, j]
-    var a1 = imIn[i  , j-1]; var b1 = imIn[i  , j]
-    var a2 = imIn[i+1, j-1]; var b2 = imIn[i+1, j]
+    var a0 = pImgIn[i-1, j-1]; var b0 = pImgIn[i-1, j]
+    var a1 = pImgIn[i  , j-1]; var b1 = pImgIn[i  , j]
+    var a2 = pImgIn[i+1, j-1]; var b2 = pImgIn[i+1, j]
     var ra = kernel[0] * a0 + kernel[1] * a1 + kernel[2] * a2
     var rb = kernel[0] * b0 + kernel[1] * b1 + kernel[2] * b2
 
-    for j in 1 ..< imOut.width-1:
-      let c0 = imIn[i-1, j+1]
-      let c1 = imIn[i  , j+1]
-      let c2 = imIn[i+1, j+1]
+    for j in 1 ..< pImgOut.width-1:
+      loadBalance(Weave)
+
+      let c0 = pImgIn[i-1, j+1]
+      let c1 = pImgIn[i  , j+1]
+      let c2 = pImgIn[i+1, j+1]
       let rc = kernel[0] * c0 + kernel[1] * c1 + kernel[2] * c2
 
       let s = kernel[0] * ra + kernel[1] * rb + kernel[2] * rc
-      imOut[i, j] = s * normalization
+      pImgOut[i, j] = s * normalization
 
       ra = rb; rb = rc # rotation
 
-func filter2D_tiled[T](imOut: var Image[T], imIn: Image[T]) =
+  syncRoot(Weave)
+
+proc filter2D_tiled[T](imOut: var Image[T], imIn: Image[T]) =
   # Naive hardcoded application of
   # | 1 2 1 |
   # | 2 4 2 |
@@ -134,21 +161,31 @@ func filter2D_tiled[T](imOut: var Image[T], imIn: Image[T]) =
   const TileH = 32
   const TileW = 32
 
-  for ii in countup(1, imOut.height-2, TileH):
-    for jj in countup(1, imOut.width-2, TileW): # Due to RGB this is actually 96 elements
-      for i in ii ..< min(ii+TileH, imOut.height-1):
-        for j in jj ..< min(jj+TileW, imOut.width-1):
-          let a0 = imIn[i-1, j-1]; let b0 = imIn[i-1, j  ]; let c0 = imIn[i-1, j+1]
-          let a1 = imIn[i  , j-1]; let b1 = imIn[i  , j  ]; let c1 = imIn[i  , j+1]
-          let a2 = imIn[i+1, j-1]; let b2 = imIn[i+1, j  ]; let c2 = imIn[i+1, j+1]
+  # TODO: there is an extra pointer indirection here
+  let pImgIn = imIn.unsafeAddr
+  let pImgOut = imOut.addr
+
+  parallelForStrided ii in 1 ..< imOut.height-1, stride = TileH:
+    captures: {pImgIn, pImgOut, normalization}
+    parallelForStrided jj in 1 ..< pImgOut.width-1, stride = TileW: # This iterates 96 elements due to RGB
+      captures: {ii, pImgIn, pImgOut, normalization}
+      for i in ii ..< min(ii+TileH, pImgOut.height-1):
+        for j in jj ..< min(jj+TileW, pImgOut.width-1):
+          loadBalance(Weave)
+
+          let a0 = pImgIn[i-1, j-1]; let b0 = pImgIn[i-1, j  ]; let c0 = pImgIn[i-1, j+1]
+          let a1 = pImgIn[i  , j-1]; let b1 = pImgIn[i  , j  ]; let c1 = pImgIn[i  , j+1]
+          let a2 = pImgIn[i+1, j-1]; let b2 = pImgIn[i+1, j  ]; let c2 = pImgIn[i+1, j+1]
 
           let s = 1.T * a0 + 2.T * b0 + 1.T * c0 +
                   2.T * a1 + 4.T * b1 + 2.T * c1 +
                   1.T * a2 + 2.T * b2 + 1.T * c2
 
-          imOut[i, j] = s * normalization
+          pImgOut[i, j] = s * normalization
 
-func filter2D_tiled_separable_rot[T](imOut: var Image[T], imIn: Image[T], kernel: static array[3, T]) =
+  syncRoot(Weave)
+
+proc filter2D_tiled_separable_rot[T](imOut: var Image[T], imIn: Image[T], kernel: static array[3, T]) =
   # Naive hardcoded application of
   # | 1 2 1 |
   # | 2 4 2 |
@@ -161,27 +198,37 @@ func filter2D_tiled_separable_rot[T](imOut: var Image[T], imIn: Image[T], kernel
   const TileH = 32
   const TileW = 32
 
-  for ii in countup(1, imOut.height-2, TileH):
-    for jj in countup(1, imOut.width-2, TileW): # Due to RGB this is actually 96 elements
-      for i in ii ..< min(ii+TileH, imOut.height-1):
+  # TODO: there is an extra pointer indirection here
+  let pImgIn = imIn.unsafeAddr
+  let pImgOut = imOut.addr
+
+  parallelForStrided ii in 1 ..< imOut.height-1, stride = TileH:
+    captures: {pImgIn, pImgOut, normalization}
+    parallelForStrided jj in 1 ..< pImgOut.width-1, stride = TileW: # This iterates 96 elements due to RGB
+      captures: {ii, pImgIn, pImgOut, normalization}
+      for i in ii ..< min(ii+TileH, pImgOut.height-1):
 
         let j = jj
-        var a0 = imIn[i-1, j-1]; var b0 = imIn[i-1, j]
-        var a1 = imIn[i  , j-1]; var b1 = imIn[i  , j]
-        var a2 = imIn[i+1, j-1]; var b2 = imIn[i+1, j]
+        var a0 = pImgIn[i-1, j-1]; var b0 = pImgIn[i-1, j]
+        var a1 = pImgIn[i  , j-1]; var b1 = pImgIn[i  , j]
+        var a2 = pImgIn[i+1, j-1]; var b2 = pImgIn[i+1, j]
         var ra = kernel[0] * a0 + kernel[1] * a1 + kernel[2] * a2
         var rb = kernel[0] * b0 + kernel[1] * b1 + kernel[2] * b2
 
-        for j in jj ..< min(jj+TileW, imOut.width-1):
-          let c0 = imIn[i-1, j+1]
-          let c1 = imIn[i  , j+1]
-          let c2 = imIn[i+1, j+1]
+        for j in jj ..< min(jj+TileW, pImgOut.width-1):
+          loadBalance(Weave)
+
+          let c0 = pImgIn[i-1, j+1]
+          let c1 = pImgIn[i  , j+1]
+          let c2 = pImgIn[i+1, j+1]
           let rc = kernel[0] * c0 + kernel[1] * c1 + kernel[2] * c2
 
           let s = kernel[0] * ra + kernel[1] * rb + kernel[2] * rc
-          imOut[i, j] = s * normalization
+          pImgOut[i, j] = s * normalization
 
           ra = rb; rb = rc # rotation
+
+  syncRoot(Weave)
 
 proc main() =
   const
@@ -191,8 +238,12 @@ proc main() =
 
   let image = newRandomImage(Width, Height, float32)
 
+  echo "Note: we have an extra pointer indirection that we can avoid by not using sequences in Images"
+  echo "Very important: ensure you kill nimsuggest before benchmarking, it can reduce Weave performance by 20x"
   header()
   separator()
+
+  init(Weave)
 
   var outRef = newImage(Width, Height, float32)
   bench("Reference", Samples):
@@ -213,6 +264,8 @@ proc main() =
   var outTiledSepRot = newImage(Width, Height, float32)
   bench("Tiled Separable Rot", Samples):
     outTiledSepRot.filter2D_tiled_separable_rot(image, [float32 1.0, 2.0, 1.0])
+
+  exit(Weave)
 
   doAssert mean_relative_error(outRot, outRef) < 1e-4
   doAssert mean_relative_error(outRotSep, outRef) < 1e-4
