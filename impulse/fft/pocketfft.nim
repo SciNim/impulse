@@ -137,23 +137,23 @@ proc dst[T: SomeFloat](
 type
   DataDesc*[T] = object
     ## Descriptor of the data used in or out of the FFT
-    shape: Shape
-    stride: Stride
-    buf: ptr UncheckedArray[T]
+    shape*: Shape
+    stride*: Stride
+    buf*: ptr UncheckedArray[T]
 
-  FFTDesc[T] = object
+  FFTDesc*[T] = object
     ## Descriptor of the FFT
-    axes: Shape
-    scalingFactor: T
-    nthreads: uint
-    forward: bool
+    axes*: Shape
+    scalingFactor*: T
+    nthreads*: uint
+    forward*: bool
 
-  DCTDesc[T] = object
-    axes: Shape
-    dctType: range[1'i32..4'i32]
-    scalingFactor: T
-    nthreads: uint
-    ortho: bool
+  DCTDesc*[T] = object
+    axes*: Shape
+    dctType*: range[1'i32..4'i32]
+    scalingFactor*: T
+    nthreads*: uint
+    ortho*: bool
 
 func init*[T](_: type DataDesc[T],
               buffer: ptr T or ptr UncheckedArray[T],
