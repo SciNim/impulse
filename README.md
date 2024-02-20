@@ -5,8 +5,8 @@ Impulse will be a collection of signal processing primitives for Nim.
 ## FFT
 
 Currently this library only consists of an FFT module, which wraps
-[https://github.com/hayguen/pocketfft](PocketFFT), a header only C++
-library.
+[PocketFFT](https://gitlab.mpcdf.mpg.de/mtr/pocketfft) in form of a
+header-only C++ version, https://github.com/mreineck/pocketfft
 
 To use it, please import the submodule directly. For example:
 
