@@ -12,10 +12,10 @@
 # ############################################################
 
 type
-  CppUniquePtr* {.importcpp: "std::unique_ptr", header: "<memory>", byref.} [T] = object
-  CppVector* {.importcpp"std::vector", header: "<vector>", byref.} [T] = object
+  CppUniquePtr*[T] {.importcpp: "std::unique_ptr", header: "<memory>", byref.} = object
+  CppVector*[T] {.importcpp"std::vector", header: "<vector>", byref.} = object
   CppString* {.importcpp: "std::string", header: "<string>", byref.} = object
-  CppComplex* {.importcpp: "std::complex", header: "<complex>", bycopy.} [T] = object
+  CppComplex*[T] {.importcpp: "std::complex", header: "<complex>", bycopy.} = object
 
 proc newCppVector*[T](): CppVector[T] {.importcpp: "std::vector<'*0>()", header: "<vector>", constructor.}
 proc newCppVector*[T](size: int): CppVector[T] {.importcpp: "std::vector<'*0>(#)", header: "<vector>", constructor.}
