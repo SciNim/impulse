@@ -1,0 +1,3 @@
+* v0.1.0
+- PocketFFT based FFT submodule is made importable
+- add section about FFT in README  
