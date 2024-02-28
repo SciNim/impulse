@@ -70,8 +70,8 @@ type
 
 proc make_cfft_plan*(length: csize_t): cfft_plan {.importc: "make_cfft_plan", pocket.}
 proc destroy_cfft_plan*(plan: cfft_plan) {.importc: "destroy_cfft_plan", pocket.}
-proc cfft_backward*(plan: cfft_plan; c: ptr cdouble; fct: cdouble): cint {.importc: "cfft_backward", pocket.}
-proc cfft_forward*(plan: cfft_plan; c: ptr cdouble; fct: cdouble): cint {.importc: "cfft_forward", pocket.}
+proc cfft_backward*(plan: cfft_plan; c: ptr Complex64; fct: cdouble): cint {.importc: "cfft_backward", pocket.}
+proc cfft_forward*(plan: cfft_plan; c: ptr Complex64; fct: cdouble): cint {.importc: "cfft_forward", pocket.}
 proc cfft_length*(plan: cfft_plan): csize_t {.importc: "cfft_length", pocket.}
 
 proc make_rfft_plan*(length: csize_t): rfft_plan  {.importc: "make_rfft_plan", pocket, cdecl.}
