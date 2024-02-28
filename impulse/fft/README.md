@@ -8,6 +8,10 @@ and in particular uses dynamic memory allocation
 
 We currently use PocketFFT.
 
+For the C++ backend we use a header only version of it. For the C
+backend we use the regular C PocketFFT implementation (which we build
+alongside the Nim program).
+
 Commit 49b813232507470a047727712acda105b84c7815
 has an initial pure Nim implementation that follows
 the PocketFFT algorithms which in turn follow
