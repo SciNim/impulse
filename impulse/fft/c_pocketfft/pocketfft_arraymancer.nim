@@ -80,3 +80,15 @@ proc fft*[T: float | Complex64](data: Tensor[T], forward = true, normalize = nkB
   else:
     result = data.clone()
     fft(result, forward, normalize, normValue)
+
+proc ifft*[T: float | Complex64](data: Tensor[T], backward = true, normalize = nkBackward, normValue = Inf): Tensor[Complex64] =
+  ## Performs an inverse FFT of input `data`. The result is returned as a `Tensor`. The array
+  ## must be of length `length`.
+  ##
+  ## `backward` determines if it's the inverse (default) or forward FFT.
+  ##
+  ## For the real -> complex transform, this is 2 allocations:
+  ## - 1 copy of the input data
+  ## - 1 allocation for the output array
+  ## For complex -> complex we get away with a single clone of the input.
+  fft(data, forward = not backward, normalize, normValue)
