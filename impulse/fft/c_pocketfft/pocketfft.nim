@@ -173,23 +173,21 @@ proc symmetrize*[T: float | Complex64](data: openArray[T]): seq[Complex64] =
   symmetrize(toPtr data, toPtr result, data.len, result.len)
 
 type
-  ## `nkAuto`: Uses `nkForward` if `forward == true`, `nkBackward` if `forward == false`.
-  ## `nkForward`: Normalization by `1`
-  ## `nkBackward`: Normalization by `1/N`
+  ## `nkBackward`: Normalization by `1` in FFT and `1/N` in inverse FFT
+  ## `nkForward`: Normalization by `1/N` in FFT and `1` in inverse FFT
   ## `nkOrtho`: Normalization by `1/√N` for both directions
   ## `nkCustom`: Custom normalization value given
-  NormalizeKind* = enum nkAuto, nkForward, nkOrtho, nkBackward, nkCustom
+  NormalizeKind* = enum nkBackward, nkOrtho, nkForward, nkCustom
   Normalize* = object
     kind*: NormalizeKind
     value*: float ## Actual normalization value
 
 proc initNormalize*(kind: NormalizeKind, forward: bool, value: float, length: int): Normalize =
   case kind
-  of nkAuto:     result = Normalize(kind: nkAuto, value: if forward: 1.0 else: 1.0 / length.float)
-  of nkForward:  result = Normalize(kind: nkForward, value: 1.0)
-  of nkOrtho:    result = Normalize(kind: nkOrtho, value: 1.0 / sqrt(length.float))
-  of nkBackward: result = Normalize(kind: nkBackward, value: 1.0 / length.float)
-  of nkCustom:   result = Normalize(kind: nkCustom, value: value)
+  of nkBackward: result = Normalize(kind: nkBackward, value: if forward: 1.0 else: 1.0 / length.float)
+  of nkForward:  result = Normalize(kind: nkForward,  value: if forward: 1.0 / length.float else: 1.0)
+  of nkOrtho:    result = Normalize(kind: nkOrtho,    value: 1.0 / sqrt(length.float))
+  of nkCustom:   result = Normalize(kind: nkCustom,   value: value)
 
 template callFFT(plan, fwd, bck, data, length, forward, norm: untyped): untyped =
   if forward:
@@ -201,7 +199,7 @@ template callFFT(plan, fwd, bck, data, length, forward, norm: untyped): untyped 
     if err != 0:
       raise newException(Exception, "Backward FFT calculation failed.")
 
-proc rfft*(data: MemoryView[float], length: int, forward: bool, normalize = nkAuto, normValue = Inf) =
+proc rfft*(data: MemoryView[float], length: int, forward: bool, normalize = nkBackward, normValue = Inf) =
   ## Performs an FFT of purely real input `data`. The calculation happens inplace. The array
   ## must be of length `length`.
   ## `forward` determines if it's the forward or inverse FFT.
@@ -275,7 +273,7 @@ proc rfft*(data: MemoryView[float], length: int, forward: bool, normalize = nkAu
   let bck = rfft_backward
   callFFT(plan, fwd, bck, data, length, forward, norm)
 
-proc fft_impl*[T: float | Complex64](data: MemoryView[T], length: int, forward: bool, normalize = nkAuto, normValue = Inf) =
+proc fft_impl*[T: float | Complex64](data: MemoryView[T], length: int, forward: bool, normalize = nkBackward, normValue = Inf) =
   ## Performs an FFT of input `data`. The calculation happens inplace. The array
   ## must be of length `length`.
   ## `forward` determines if it's the forward or inverse FFT.
@@ -290,14 +288,14 @@ proc fft_impl*[T: float | Complex64](data: MemoryView[T], length: int, forward: 
     let bck = cfft_backward
   callFFT(plan, fwd, bck, data, length, forward, norm)
 
-proc fft*[T: float | Complex64](data: var openArray[T], forward = true, normalize = nkAuto, normValue = Inf) =
+proc fft*[T: float | Complex64](data: var openArray[T], forward = true, normalize = nkBackward, normValue = Inf) =
   ## Performs an FFT of input `data`. The calculation happens inplace. This
   ## means for real input data, the result is stored as packed `float` data (see `rfft` above).
   ##
   ## `forward` determines if it's the forward or inverse FFT.
   fft_impl(toPtr data, data.len, forward)
 
-proc rfft_packed*(data: openArray[float], forward = true, normalize = nkAuto, normValue = Inf): seq[float] =
+proc rfft_packed*(data: openArray[float], forward = true, normalize = nkBackward, normValue = Inf): seq[float] =
   ## Performs an FFT of input real `data`. The result is returned as a `seq`. The array
   ## must be of length `length`. The returned data is in maximally packed form as `float`
   ## data. See the `rfft` overload above.
@@ -306,7 +304,7 @@ proc rfft_packed*(data: openArray[float], forward = true, normalize = nkAuto, no
   result = @data
   rfft(toPtr(result), data.len, forward)
 
-proc rfft*(data: openArray[float], forward: bool = true, normalize = nkAuto, normValue = Inf): seq[Complex64] =
+proc rfft*(data: openArray[float], forward: bool = true, normalize = nkBackward, normValue = Inf): seq[Complex64] =
   ## Performs an FFT of input real `data`. The result is returned as a `seq[Complex64]`.
   ## The returned data only contains the non redundant N/2 first terms of the resulting
   ## FFT. Call `symmetrize` on the result to compute the (symmetric) hermitian conjugate
@@ -319,7 +317,7 @@ proc rfft*(data: openArray[float], forward: bool = true, normalize = nkAuto, nor
   fft(res, forward) # `rfft` result as a `seq[float]`
   result = unpackFFT res
 
-proc fft*[T: float | Complex64](data: openArray[T], forward = true, normalize = nkAuto, normValue = Inf): seq[Complex64] =
+proc fft*[T: float | Complex64](data: openArray[T], forward = true, normalize = nkBackward, normValue = Inf): seq[Complex64] =
   ## Performs an FFT of input `data`. The result is returned as a `seq`. The array
   ## must be of length `length`.
   ##
