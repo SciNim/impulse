@@ -30,13 +30,13 @@ proc unpackFFT*(data: Tensor[float]): Tensor[Complex64] =
   result = newTensorUninit[Complex64](outLen)
   unpackFFT(toPtr data, toPtr result, data.len)
 
-proc fft*[T: float | Complex64](data: var Tensor[T], forward: bool = true, normalize = nkAuto, normValue = Inf) =
+proc fft*[T: float | Complex64](data: var Tensor[T], forward: bool = true, normalize = nkBackward, normValue = Inf) =
   ## Performs an FFT of input `data`. The calculation happens inplace. The tensor
   ## must be of length `length`.
   ## `forward` determines if it's the forward or inverse FFT.
   fft_impl(toPtr data, data.size.int, forward, normalize, normValue)
 
-proc rfft_packed*(data: Tensor[float], forward: bool = true, normalize = nkAuto, normValue = Inf): Tensor[float] =
+proc rfft_packed*(data: Tensor[float], forward: bool = true, normalize = nkBackward, normValue = Inf): Tensor[float] =
   ## Performs an FFT of input real `data`. The result is returned as a `Tensor`. The array
   ## must be of length `length`. The returned data is in maximally packed form as `float`
   ## data. See the `rfft` overload above.
@@ -45,7 +45,7 @@ proc rfft_packed*(data: Tensor[float], forward: bool = true, normalize = nkAuto,
   result = data.clone()
   rfft(toPtr(result), data.len, forward, normalize, normValue)
 
-proc rfft*(data: Tensor[float], forward: bool = true, normalize = nkAuto, normValue = Inf): Tensor[Complex64] =
+proc rfft*(data: Tensor[float], forward: bool = true, normalize = nkBackward, normValue = Inf): Tensor[Complex64] =
   ## Performs an FFT of input real `data`. The result is returned as a `Tensor[Complex64]`.
   ## The returned data only contains the non redundant N/2 first terms of the resulting
   ## FFT. Call `symmetrize` on the result to compute the (symmetric) hermitian conjugate
@@ -65,7 +65,7 @@ proc symmetrize*[T: float | Complex64](data: Tensor[T]): Tensor[Complex64] =
   result = newTensorUninit[Complex64](symmTargetSize(data))
   symmetrize(toPtr data, toPtr result, data.len, result.len)
 
-proc fft*[T: float | Complex64](data: Tensor[T], forward = true, normalize = nkAuto, normValue = Inf): Tensor[Complex64] =
+proc fft*[T: float | Complex64](data: Tensor[T], forward = true, normalize = nkBackward, normValue = Inf): Tensor[Complex64] =
   ## Performs an FFT of input `data`. The result is returned as a `Tensor`. The array
   ## must be of length `length`.
   ##
