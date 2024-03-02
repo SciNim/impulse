@@ -78,5 +78,5 @@ proc fft*[T: float | Complex64](data: Tensor[T], forward = true, normalize = nkA
   when T is float:
     result = symmetrize rfft_packed(data, forward, normalize, normValue)
   else:
-    result = @data
+    result = data.clone()
     fft(result, forward, normalize, normValue)
