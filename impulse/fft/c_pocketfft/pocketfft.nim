@@ -116,7 +116,12 @@ proc init*(_: typedesc[FFTPlanComplex], length: int): FFTPlanComplex =
 func isOdd*(i: int): bool = (i and 1) == 1
 
 type MemoryView*[T] = ptr UncheckedArray[T]
-func toPtr*[T](ar: openArray[T]): MemoryView[T] = cast[ptr UncheckedArray[T]](ar[0].addr)
+template address(arg: untyped): untyped =
+  when (NimMajor, NimMinor, NimPatch) >= (2, 0, 0):
+    arg.addr
+  else:
+    arg.unsafeAddr
+func toPtr*[T](ar: openArray[T]): MemoryView[T] = cast[ptr UncheckedArray[T]](ar[0].address)
 
 proc unpackFFT*(data: MemoryView[float]; outDat: MemoryView[Complex64], inLen: int) =
   ## 'Unpacks' a given FFT result from a call to `rfft_forward/backward` as returned
@@ -200,11 +205,11 @@ proc initNormalize*(kind: NormalizeKind, forward: bool, value: float, length: in
 
 template callFFT(plan, fwd, bck, data, length, forward, norm: untyped): untyped =
   if forward:
-    let err = fwd(plan.pocket, data[0].addr, norm.value)
+    let err = fwd(plan.pocket, data[0].address, norm.value)
     if err != 0:
       raise newException(Exception, "Forward FFT calculation failed.")
   else:
-    let err = bck(plan.pocket, data[0].addr, norm.value)
+    let err = bck(plan.pocket, data[0].address, norm.value)
     if err != 0:
       raise newException(Exception, "Backward FFT calculation failed.")
 
