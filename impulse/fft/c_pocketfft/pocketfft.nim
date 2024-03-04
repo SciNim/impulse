@@ -90,13 +90,22 @@ type
     pocket*: cfft_plan
     length*: int
 
-proc `=destroy`*(plan: FFTPlanReal) =
-  ## Frees the `rfft_plan`
-  destroy_rfft_plan(plan.pocket)
+when (NimMajor, NimMinor, NimPatch) >= (2, 0, 0):
+  proc `=destroy`*(plan: FFTPlanReal) =
+    ## Frees the `rfft_plan`
+    destroy_rfft_plan(plan.pocket)
 
-proc `=destroy`(plan: FFTPlanComplex) =
-  ## Frees the `cfft_plan`
-  destroy_cfft_plan(plan.pocket)
+  proc `=destroy`(plan: FFTPlanComplex) =
+    ## Frees the `cfft_plan`
+    destroy_cfft_plan(plan.pocket)
+else:
+  proc `=destroy`*(plan: var FFTPlanReal) =
+    ## Frees the `rfft_plan`
+    destroy_rfft_plan(plan.pocket)
+
+  proc `=destroy`(plan: var FFTPlanComplex) =
+    ## Frees the `cfft_plan`
+    destroy_cfft_plan(plan.pocket)
 
 proc init*(_: typedesc[FFTPlanReal], length: int): FFTPlanReal =
   result = FFTPlanReal(pocket: make_rfft_plan(length.csize_t))
