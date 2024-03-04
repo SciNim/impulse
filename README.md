@@ -20,10 +20,12 @@ examples below.
 
 ### C example
 
-The `pocketfft` submodule needs to be imported manually:
+The `pocketfft` submodule can to be imported manually using
+`import impulse/fft/pocketfft` or one can simply import the `fft`
+submodule as shown below.
 
 ```nim
-import impulse/fft/pocketfft
+import impulse/fft
 
 template isClose(a1, a2, eps: untyped): untyped =
   for i in 0 ..< a1.len:
@@ -69,10 +71,10 @@ block Complex:
 
 ### C++ example
 
-The `pocketfft` submodule needs to be imported manually:
+When compiling on the C++ backend, the API is a bit different:
 
 ```nim
-import impulse/fft/pocketfft
+import impulse/fft
 import std / complex
 
 let dIn = @[1.0, 2.0, 1.0, -1.0, 1.5]
