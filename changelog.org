@@ -1,3 +1,9 @@
+* v0.1.1
+- add C backend for PocketFFT, by simply wrapping the C version of the
+  library
+- make ~fft~ an importable submodule, which imports the correct
+  library depending on backend (C or C++).
+  *NOTE*: The two backends use different APIs!
 * v0.1.0
 - PocketFFT based FFT submodule is made importable
 - add section about FFT in README  
