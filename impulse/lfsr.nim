@@ -69,10 +69,9 @@ proc initLFSR*(taps: Tensor[int] | seq[int],
   ## - Ready to use LFSR object
 
   # Remove the last value from taps if it is a zero
-  when typeof(taps) is Tensor:
-    let taps = if taps[taps.size - 1] == 0: taps[_..^2] else: taps
-  else:
-    let taps = if taps[taps.size - 1] == 0: taps.toTensor[_..^2] else: taps.toTensor
+  var taps = when typeof(taps) is Tensor: taps else: taps.toTensor
+  if taps[taps.size - 1] == 0: 
+    taps = taps[_..^2]
   if taps.size > 1 and not taps.toSeq1D.isSorted(order = SortOrder.Descending):
     raise newException(ValueError,
       &"The LFSR polynomial must be ordered in descending exponent order, but it is not:\n{taps=}")
