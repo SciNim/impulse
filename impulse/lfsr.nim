@@ -70,7 +70,7 @@ proc initLFSR*(taps: Tensor[int] | seq[int],
 
   # Remove the last value from taps if it is a zero
   var taps = when typeof(taps) is Tensor: taps else: taps.toTensor
-  if taps[taps.size - 1] == 0: 
+  if taps[taps.size - 1] == 0:
     taps = taps[_..^2]
   if taps.size > 1 and not taps.toSeq1D.isSorted(order = SortOrder.Descending):
     raise newException(ValueError,
@@ -168,27 +168,38 @@ proc next*(self: var LFSR, verbose = false,
   self.count += 1
   self.outbit = result
 
-iterator generator*(lfsr: var LFSR,n: int,
-    store_sequence: static bool = false): bool =
-  ## Generator that will generate a random sequence of length `n`
+iterator items*(lfsr: var LFSR,
+    n: int = -1,
+    store_sequence: static bool = false,
+    stop_on_reset = false): bool =
+  ## Iterator that will generate a random sequence of length `n`
   ##
   ## Inputs:
   ## - Preconfigured LFSR object
-  ## - n: Number of random values to generate
-  ## - store_sequence: static bool that enables saving the generated sequence
+  ## - n: Number of random values to generate (-1 to generate indefinitely,
+  ##      which is the default)
+  ## - store_sequence: Static bool that enables saving the generated sequence
+  ## - stop_on_reset: Stop the iteration if the LFSR has been reset
   ##
   ## Return:
   ## - Generated boolean values
-  yield lfsr.next(store_sequence = store_sequence)
+  var generated_count = 0
+  while (n < 0 or generated_count < n) and
+      not (stop_on_reset and generated_count > 0 and lfsr.count == 0):
+    # Generate until the target number of items is reached
+    # or the LFSR is reset (i.e. if the count goes back to 0)
+    yield lfsr.next(store_sequence = store_sequence)
+    generated_count += 1
 
-proc generate*(lfsr: var LFSR, n: int,
+proc generate*(lfsr: var LFSR,
+    n: int,
     store_sequence: static bool = false): Tensor[bool] {.noinit.} =
   ## Generate a random sequence of length `n`
   ##
   ## Inputs:
   ## - Preconfigured LFSR object
   ## - n: Number of random values to generate
-  ## - store_sequence: static bool that enables saving the generated sequence
+  ## - store_sequence: Static bool that enables saving the generated sequence
   ##
   ## Return:
   ## - `Tensor[bool]` of size `n` containing the generated values
