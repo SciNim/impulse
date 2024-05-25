@@ -4,7 +4,7 @@ Impulse will be a collection of signal processing primitives for Nim.
 
 ## FFT
 
-Currently this library only consists of an FFT module, which wraps
+The FFT part of this library wraps
 [PocketFFT](https://gitlab.mpcdf.mpg.de/mtr/pocketfft).
 
 For the C++ backend an optimized version of PocketFFT is used, in the
@@ -188,6 +188,10 @@ As a convenience, a `tap_examples` function is provided. This function takes a
 
 The LFSR module implementation is favors simplicity over speed. As of 2024, it
 is able to generate 2^24 values in less than 1 minute on a mid-range laptop.
+
+## Signal
+
+The Signal modulei mplements several signal processing and related functions, such as a Kaiser window and a firls FIR filter design function. See the documentation of those functions for more details.
 
 ## License
 

@@ -14,3 +14,4 @@ requires "arraymancer >= 0.7.28"
 task test, "Run standard tests":
   exec "nim c -r tests/test_fft.nim"
   exec "nim c -r tests/test_fft2.nim"
+  exec "nim c -r tests/test_signal.nim"
