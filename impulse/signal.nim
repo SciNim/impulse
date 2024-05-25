@@ -224,3 +224,319 @@ proc kaiser*[T: SomeFloat](size: int = 10, beta: T = 5.0): Tensor[T] =
   let n_vals = arange(T(0.0), T(size))
   let alpha = (T(size) - 1.0) / 2.0
   return i0(beta * sqrt(1.0 -. ((n_vals -. alpha) / alpha) ^. 2.0)) /. i0(beta)
+
+proc firls*(fir_order: int,
+    bands, desired: Tensor[float],
+    weights = newTensor[float](),
+    symmetric = true,
+    fs = 2.0): Tensor[float] =
+  ## Design a linear phase FIR filter using least-squares error criterion
+  ##
+  ## Returns the coefficients of the linear phase FIR filter of the requested
+  ## order and type which best fullfills the desired frequency response
+  ## "constraints" described by the `bands` (i.e. frequency), `desired` (i.e. gain)
+  ## and `weights` (e.i. constraint weights) input tensors.
+  ##
+  ## Depending on the order and the value of the `symmetric` argument, the
+  ## output filter coefficients will correspond to a Type I, II, III or IV
+  ## FIR filter.
+  ##
+  ## The constraints are specified as a pair of tensors describing "constrained
+  ## frequency bands" indicating the start and end frequencies of each band `k`,
+  ## as well as the gain of the filter at those edge frequencies.
+  ##
+  ## Inputs:
+  ##   - fir_order: The "order" of the filter (which is 1 less than the length
+  ##                of the output tensor).
+  ##   - bands: 2-column matrix of non-overlapping, normalized frequency band
+  ##            edges in ascending order. Each row in the matrix corresponds to
+  ##            the edges of a constrained frequency band (the column contains
+  ##            the start frequency of the band and the second column contains
+  ##            the end frequency).
+  ##            Frequencies between the specified bands are "unconstrained"
+  ##            (i.e. ignored during the error minimization process).
+  ##            Frequency values must be in the [0.0, fs/2] range (i.e. they
+  ##            cannot be negative or exceed the Nyquist frequency).
+  ##   - desired: 2-column matrix that specifies the gains of the desired
+  ##              frequency response at the band "edges". Thus the lengths of
+  ##              the `bands` and `desired` tensors must match. If they do not,
+  ##              an exception is raised.
+  ##              For each band `k` the desired filter frequency
+  ##              response is such that its gain linearly changes from the
+  ##              `desired[k, 0]` value at the start of the band (i.e. at the
+  ##              `bands[k, 0]` frequency) to the value `desired[k, 1]` at the
+  ##              end of the band (i.e. at `bands[k, 1]`).
+  ##   - weights: Optional rank-1 Tensor of weights. Controls which frequency
+  ##              response "contraints" are given more "weight" during the
+  ##              least-squares error minimization process. The default is that
+  ##              all constraints are given the same weight. If provided, its
+  ##              length must be half the length of `bands` (i.e. there must be
+  ##              one constraint per band). An exception is raised otherwise.
+  ##   - symmetric: When `true` (the default), the result will be a symmetric
+  ##                FIR filter (Type I when `fir_order` is even and Type II
+  ##                when `fir_order` is odd). When `false`, the result will be
+  ##                an anti-symmetric FIR filter (Type III when `fir_order` is
+  ##                even and Type IV when `fir_order` is odd).
+  ##   - fs: The sampling frequency of the signal (as a float). Each frequency
+  ##         in `bands` must be between 0.0 and `fs/2` (inclusive).
+  ##         Default is 2.0, which means that by default the band frequencies
+  ##         are expected to be on the 0.0 to 1.0 range.
+  ##
+  ## Result:
+  ##   - A Tensor containing the `fir_order + 1` taps of the FIR filter that
+  ##     best approximates the desired frequency response (i.e. the filter that
+  ##     minimizes the least-squares error vs the given constraints).
+  ##
+  ## Notes:
+  ##   - Contrary to numpy's firls, the first argument is the FIR filter order,
+  ##     not the FIR length. The filter length is `filter_order + 1`.
+  ##   - Frequencies between "constrained bands" are considered "don't care"
+  ##     regions for which the error is not minimized.
+  ##   - When designing a filter with a gain other than zero at the Nyquist
+  ##     frequency (i.e. when `bands[^1] != 0.0`), such as high-pass and
+  ##     band-stop filters, the filter order must be even. An exception is
+  ##     raised otherwise.
+  ##   - The `bands` and `desired` can also be flat rank-1 tensors, as long as
+  ##     their length is even (so that they can be reshaped into 2 column
+  ##     matrices.
+  ##
+  ## Examples:
+  ## ```nim
+  ## # Example of an order 4, Type I, low-pass FIR filter which targets being
+  ## # a pass-through in the 0.0 to 0.3 times Nyquist frequency range, while
+  ## # filtering frequencies in the 0.4 to 1.0 Nyquist frequency range
+  ## # Note that the range 0.3 to 0.4 is left unconstrained
+  ## # Also note how the result length is 6 and the filter is symmetric
+  ## # around the middle value:
+  ## echo firls(4, [[0.0, 0.3], [0.4, 1.0]].toTensor, [[1.0, 1.0], [0.0, 0.0]].toTensor)
+  ## # Tensor[system.float] of shape "[5]" on backend "Cpu"
+  ## #     0.126496    0.278552    0.345068    0.278552    0.126496
+  ##
+  ## # Same filter as above, but using rank-1, even length tensors as inputs
+  ## echo firls(4, [0.0, 0.3, 0.4, 1.0].toTensor, [1.0, 1.0, 0.0, 0.0].toTensor)
+  ## # Tensor[system.float] of shape "[5]" on backend "Cpu"
+  ## #     0.126496    0.278552    0.345068    0.278552    0.126496
+  ##
+  ## # Same filter as above, but using unnormalized frequencies and a sampling
+  ## # frequency of 10.0 Hz (note how all the frequencies are 5 times greater
+  ## # because the default fs is 2.0):
+  ## echo firls(4,
+  ##   [[0.0, 1.5], [2.0, 5.0]].toTensor,
+  ##   [[1.0, 1.0], [0.0, 0.0]].toTensor,
+  ##   fs = 10.0)
+  ## # Tensor[system.float] of shape "[5]" on backend "Cpu"
+  ## #     0.126496    0.278552    0.345068    0.278552    0.126496
+  ##
+  ## # Same kind of filter, but give more weight to the pass-through constraint
+  ## echo firls(4,
+  ##   [[0.0, 0.3], [0.4, 1.0]].toTensor,
+  ##   [[1.0, 1.0], [0.0, 0.0]].toTensor,
+  ##   weights = [1.0, 0.5].toTensor)
+  ## # Tensor[system.float] of shape "[5]" on backend "Cpu"
+  ## #     0.110353    0.284473    0.360868    0.284473    0.110353
+  ##
+  ## # A more complex, order 5, Type II, low-pass filter
+  ## echo firls(5,
+  ##   [[0.0, 0.3], [0.3, 0.6], [0.6, 1.0]].toTensor,
+  ##   [[1.0, 1.0], [1.0, 0.2], [0.0, 0.0]].toTensor)
+  ## # Tensor[system.float] of shape "[6]" on backend "Cpu"
+  ## #     -0.0560333      0.146107      0.430716      0.430716      0.146107    -0.0560333
+  ##
+  ## # Example of an order 6 Type IV high-pass FIR filter:
+  ## echo firls(6,
+  ##   [[0.0, 0.4], [0.6, 1.0]].toTensor, [[0.0, 0.0], [0.9, 1.0]].toTensor,
+  ##   symmetric = false)
+  ## # Tensor[system.float] of shape "[7]" on backend "Cpu"
+  ## #    -0.13945   0.285186  -0.258596   0   0.258596   -0.285186   0.13945
+  ##
+  ## Trying to design a high-pass filter with odd order generates an exception:
+  ## echo firls(5,
+  ##   [0.0, 0.5, 0.6, 1.0].toTensor, [0.0, 0.0, 1.0, 1.0].toTensor,
+  ##   symmetric = false)
+  ## # Filter order (5) must be even when the last
+  ## # frequency is 1.0 and its gain is not 0.0 [ValueError]
+  ## ```
+  if fs <= 0:
+    raise newException(ValueError,
+      "Sampling frequency fs must be positive but got " & $fs)
+
+  var bands = bands.flatten()
+  let desired = desired.flatten()
+  if bands.rank > 1:
+    raise newException(ValueError,
+      "Frequency band tensor rank (" & $bands.rank & ") is not 1")
+  if desired.rank > 1:
+    raise newException(ValueError,
+      "Desired gain pair tensor rank (" & $desired.rank & ") is not 1")
+
+  let nyquist_freq = fs / 2.0
+  if max(bands) > nyquist_freq or min(bands) < 0.0:
+    raise newException(ValueError,
+      "Some frequency values are outside of the valid [0.0, " &
+      $nyquist_freq & "] range:\n" &
+      $bands)
+
+  if (bands.len mod 2) != 0:
+    raise newException(ValueError, "Frequency band tensor length (" &
+      $bands.len & ") is not even")
+
+  if bands.len != desired.len:
+    raise newException(ValueError,
+      "Frequency and desired gain tensors must have the same length (" &
+      $bands.len & "!=" & $desired.len & ")")
+
+  # Check whether the filter order is valid
+  let even_order = (fir_order mod 2) == 0
+
+  if not even_order and bands[^1].item == 1.0 and desired[^1].item != 0.0:
+    raise newException(ValueError,
+      "Filter order (" & $fir_order &
+      ") must be even when the last frequency is 1.0 and its desired gain is not 0.0")
+
+  let weights = if weights.len == 0:
+      # When weights are not provided, make them constant
+      # (i.e. all bands have the same weight)
+      ones[float](bands.len div 2)
+    else:
+      weights
+  if bands.len != 2 * weights.len:
+    raise newException(ValueError,
+      "Weigth tensor length (" & $weights.len &
+      ") must be half the length of the frequency band and desired gain pair tensor lenghts (" &
+      $bands.len & ")")
+
+  # Note that df is only used
+  let df = diff_discrete(bands, axis=0)
+  if any(df <. 0.0):
+    raise newException(ValueError,
+      "Frequency band tensor values must increasing monotonically")
+
+  # We must normalize the band frequencies to the Nyquist frequency, but we
+  # must _also_ multiply them by 2.0. The result is that (internally to this
+  # function) we normalize them by the sampling frequency, but externally
+  # (i.e. in the function documentation) we say that we normalize to the
+  # Nyquist frequency
+  bands /= fs # Equivalent to `bands /= (0.5 * fs) * 2.0`!
+  let constant_weights = all((weights -. weights[0]) ==. 0.0)
+  # If there are no gaps between the constrained bands we consider that the
+  # constraints are "continuous"
+  let continuous_constraints = df.len == 1 or all(df[1 ..< df.len | 2] ==. 0.0)
+  # Only use the matrix inversion method when needed, since it is much slower
+  let requires_matrix_inversion = not (constant_weights and continuous_constraints)
+
+  # The half "length" is the length of the "half" of the filter that is
+  # symmetric or anti-symmetric with the other "half". "Half" is in quotes
+  # because when fir_order is even an additional middle coefficient must
+  # be added between the two "halfs"
+  let half_length = fir_order / 2
+
+  if symmetric:
+    # Symmetric (i.e. Type I or Type II) linear phase FIR
+    # Type I when fir_order is even, Type II otherwise
+    var k = arange(floor(half_length) + 1.0)
+    if not even_order:
+      k +.= 0.5
+
+    var sk_pos, sk_neg, q: Tensor[float]
+    if requires_matrix_inversion:
+      let k_right_tile = 2.0 * k.reshape_infer(-1, 1).tile(1, k.len)
+      let k_down_tile = 2.0 * k.tile(k.len, 1)
+      sk_pos = k_right_tile + k_down_tile
+      sk_neg = k_right_tile - k_down_tile
+      q = zeros[float](sk_pos.shape)
+    if even_order:
+      k = k[1.._]
+
+    # Note that we order the operations and make some pre-calculations
+    # to minimize the number of tensor ops
+    let trig_base = 2.0 * PI * k
+    let k_square_inv = 1.0 /. (k *. k)
+    var b0 = 0.0
+    var b = zeros[float](k.shape)
+    for idx in countup(0, bands.len - 1, 2):
+      let weight_pow = abs(weights[(idx+1) div 2])
+      if requires_matrix_inversion:
+        q +=
+          weight_pow * 0.5 * bands[idx+1] * (sinc(sk_pos * bands[idx+1]) + sinc(sk_neg * bands[idx+1])) -
+          weight_pow * 0.5 * bands[idx] * (sinc(sk_pos * bands[idx]) + sinc(sk_neg * bands[idx]))
+      let slope = (desired[idx+1] - desired[idx]) / (bands[idx+1] - bands[idx])
+      let b1 = desired[idx] - slope * bands[idx]
+      if even_order:
+        b0 += weight_pow *
+          (b1 * (bands[idx+1] - bands[idx]) + slope / 2.0 * (bands[idx+1]^2 - bands[idx]^2))
+      b += weight_pow *
+        (slope / (4.0 * PI^2) * (cos(trig_base * bands[idx+1]) - cos(trig_base * bands[idx])) *. k_square_inv)
+      b +=
+        weight_pow * bands[idx+1] * (slope * bands[idx+1] + b1) * sinc(2.0 * k * bands[idx+1]) -
+        weight_pow * bands[idx] * (slope * bands[idx] + b1) * sinc(2.0 * k * bands[idx])
+
+    if even_order:
+      b = concat([[b0].toTensor, b], axis = 0)
+
+    var a: Tensor[float]
+    if requires_matrix_inversion:
+      a = solve(q, b)
+    else:
+      a = 4.0 * weights[0] * b
+      if even_order:
+        a[0] /= 2.0
+
+    result = if even_order:
+        # Type I FIR filter: symmetric, even order, odd length
+        # Note that half_length, despite being a float, is an exact number when
+        # fir_order is even!
+        concat([a[half_length.int .. 1 | -1] * 0.5,
+          [a[0]].toTensor,
+          a[1 .. half_length.int] * 0.5], axis = 0)
+      else:
+        # Type II FIR filter: symmetric, odd order, even length
+        0.5 * concat([a[_|-1], a], axis = 0)
+  else:
+    # Anti-symmetric (i.e. Type III or Type IV) linear phase FIR
+    # Type III when fir_order is even, Type IV otherwise
+    var k = if even_order:
+        # Note that half_order is float but it is an exact number!
+        arange(1.0, floor(half_length) + 1.0)
+      else:
+        arange(floor(half_length) + 1.0) +. 0.5
+
+    var sk_pos, sk_neg, q: Tensor[float]
+    if requires_matrix_inversion:
+      let k_right_tile = 2.0 * k.reshape_infer(-1, 1).tile(1, k.len)
+      let k_down_tile = 2.0 * k.tile(k.len, 1)
+      # sk_pos is the base argument for the "positive" sincs
+      sk_pos = k_right_tile + k_down_tile
+      # sk_neg is the base argument for the "negative" sincs
+      sk_neg = k_right_tile - k_down_tile
+      q = zeros[float](sk_pos.shape)
+
+    # Note that we order the operations and make some pre-calculations
+    # to minimize the number of tensor ops
+    let trig_base = 2.0 * PI * k
+    let k_square_inv = 1.0 /. (k *. k)
+    var b = zeros[float](k.shape)
+    for idx in countup(0, bands.len - 1, 2):
+      let weight_pow = abs(weights[(idx+1) div 2])
+      if requires_matrix_inversion:
+        q +=
+          weight_pow * 0.5 * bands[idx+1] * (sinc(sk_pos * bands[idx+1]) - sinc(sk_neg * bands[idx+1])) -
+          weight_pow * 0.5 * bands[idx] * (sinc(sk_pos * bands[idx]) - sinc(sk_neg * bands[idx]))
+      let slope = (desired[idx+1] - desired[idx]) / (bands[idx+1] - bands[idx])
+      let b1 = desired[idx] - slope * bands[idx]
+      b += weight_pow *
+        (slope / (4.0 * PI^2) * (sin(trig_base * bands[idx+1]) - sin(trig_base * bands[idx])) *. k_square_inv)
+      b +=
+        (weight_pow * (slope * bands[idx] + b1) * cos(trig_base * bands[idx]) -
+        weight_pow * (slope * bands[idx+1] + b1) * cos(trig_base * bands[idx+1])) /. trig_base
+
+    let a = if requires_matrix_inversion:
+        solve(q, b)
+      else:
+        -4.0 * weights[0] * b
+
+    result = if even_order:
+        # Type III FIR filter: anti-symmetric, with a zero middle value
+        0.5 * concat([a[_|-1], [0.0].toTensor, -a], axis = 0)
+      else:
+        # Type IV FIR filter: anti-symmetric, no middle value
+        0.5 * concat([a[_|-1], -a], axis = 0)
