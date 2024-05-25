@@ -540,3 +540,55 @@ proc firls*(fir_order: int,
       else:
         # Type IV FIR filter: anti-symmetric, no middle value
         0.5 * concat([a[_|-1], -a], axis = 0)
+
+proc upfirdn*[T](t, h: Tensor[T], up = 1, down = 1): Tensor[T] {.noinit.} =
+  ## Upsample, apply a FIR filter, and downsample a rank-1 Tensor
+  ##
+  ## Inputs:
+  ##   - t: Rank-1 input signal Tensor that will be filtered
+  ##   - h: Rank-1 FIR (finite-impulse response) filter coeeficient tensor
+  ##   - up: Upsampling rate (applied before the FIR filter step)
+  ##   - down: Downsampling rate (applied after the FIR filter step)
+  ##
+  ## Result:
+  ##   - The filtered signal Rank-1 tensor
+  ##
+  ## Note:
+  ##   - The order of the input and filter tensors follows the `Matlab`
+  ##     convention, rather than the `scipy.signal` convention, which puts the
+  ##     filter first, followed by the input tensor). If you are translating
+  ##     `scipy` code you must swap the order of the input and filter tensors.
+  ##
+  ## Examples:
+  ## ```nim
+  ## # FIR filter
+  ## echo upfirdn([1, 1, 1].toTensor, [1, 1, 1].toTensor)
+  ## # Tensor[system.int] of shape "[5]" on backend "Cpu"
+  ## #     1     2     3     2     1
+  ##
+  ## # Upsampling with zeros insertion
+  ## echo upfirdn([1, 2, 3].toTensor, [1].toTensor, 3)
+  ## # Tensor[system.int] of shape "[7]" on backend "Cpu"
+  ## #     1     0     0     2     0     0     3
+  ##
+  ## # Upsampling with sample-and-hold
+  ## echo upfirdn([1, 2, 3].toTensor, [1, 1, 1].toTensor, 3)
+  ## # Tensor[system.int] of shape "[9]" on backend "Cpu"
+  ## #     1     1     1     2     2     2     3     3     3
+  ##
+  ## # Linear interpolation
+  ## echo upfirdn([1.0, 1.0, 1.0].toTensor, [0.5, 1.0, 0.5].toTensor, 2)
+  ## # Tensor[system.float] of shape "[7]" on backend "Cpu"
+  ## #     0.5      1      1      1      1      1    0.5
+  ##
+  ## # Decimation by 3
+  ## echo upfirdn(arange(10.0), [1.0].toTensor, 1, 3)
+  ## # Tensor[system.float] of shape "[4]" on backend "Cpu"
+  ## #     0     3     6     9
+  ##
+  ## # Linear interpoloation (rate 2/3)
+  ## echo upfirdn(arange(10.0), [0.5, 1.0, 0.5].toTensor, 2, 3)
+  ## # Tensor[system.float] of shape "[7]" on backend "Cpu"
+  ## #     0      1    2.5      4    5.5      7    8.5
+  t.upsample(up).convolve(h, mode = ConvolveMode.full, down = down)
+

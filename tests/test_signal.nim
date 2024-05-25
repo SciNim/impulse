@@ -70,6 +70,34 @@ proc test_firls(): bool =
 
   return true
 
+proc test_upfirdn(): bool =
+  # FIR filter
+  if upfirdn([1, 1, 1].toTensor, [1, 1, 1].toTensor) != [1, 2, 3, 2, 1].toTensor:
+    return false
+
+  # Upsampling with zero insertion
+  if upfirdn([1, 2, 3].toTensor, [1].toTensor, 3) != [1, 0, 0, 2, 0, 0, 3].toTensor:
+    return false
+
+  # Upsampling with sample-and-hold
+  if upfirdn([1, 2, 3].toTensor, [1, 1, 1].toTensor, 3) != [1, 1, 1, 2, 2, 2, 3, 3, 3].toTensor:
+    return false
+
+  # Linear interpolation
+  if upfirdn([1.0, 1.0, 1.0].toTensor, [0.5, 1.0, 0.5].toTensor, 2) != [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5].toTensor:
+    return false
+
+  # Decimation by 3
+  if upfirdn(arange(10), [1].toTensor, 1, 3) != [0, 3, 6, 9].toTensor:
+    return false
+
+  # Linear interp, rate 2/3
+  if upfirdn(arange(10.0), [0.5, 1.0, 0.5].toTensor, 2, 3) != [0.0, 1.0, 2.5, 4, 5.5, 7.0, 8.5].toTensor:
+    return false
+
+  return true
+
 # Run the tests
 doAssert test_kaiser()
 doAssert test_firls()
+doAssert test_upfirdn()
