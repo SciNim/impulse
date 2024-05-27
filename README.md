@@ -191,7 +191,7 @@ is able to generate 2^24 values in less than 1 minute on a mid-range laptop.
 
 ## Signal
 
-The Signal modulei mplements several signal processing and related functions, such as a Kaiser window and a firls FIR filter design function. See the documentation of those functions for more details.
+The Signal module implements several signal processing and related functions, such as a Kaiser window and a firls FIR filter design function. See the documentation of those functions for more details.
 
 ## License
 
