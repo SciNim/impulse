@@ -98,6 +98,30 @@ echo dOut
 # @[(4.5, 0.0), (2.081559480312316, -1.651098762732523), (-1.831559480312316, 1.608220406444071), (0.0, 0.0), (0.0, 0.0)]
 ```
 
+## Primes
+
+The `primes` module implements several procedures related to prime numbers.
+
+Prime numbers are an essential building block of many algorithms in diverse
+areas such as cryptography, digital communications and many others.
+This module adds a function to generate rank-1 tensors of primes upto a
+certain value; as well as a function to calculate the prime factors of a
+number.
+
+### Prime examples
+
+```nim
+# Generate the list of primes smaller or equal to 20
+echo primes(20)
+# Tensor[system.int] of shape "[8]" on backend "Cpu"
+#     2     3     5     7    11    13    17    19
+
+# Get the list of prime factors of the number 60
+echo factor(60)
+# Tensor[system.int] of shape "[4]" on backend "Cpu"
+#    2     2     3     5
+```
+
 ## LFSR
 
 LFSR module which implements a Linear Feedback Shift Register that can be
