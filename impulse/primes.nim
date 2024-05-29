@@ -26,6 +26,11 @@ proc primes*[T: SomeInteger | SomeFloat](upto: T): Tensor[T] =
   ##     It also stops checking after sqrt(upto)
   ##   - The memory required by this procedure is proportional to the input
   ##     number.
+  when T is SomeFloat:
+    if upto != round(upto):
+      raise newException(ValueError,
+        "`upto` value (" & $upto & ") must be a whole number")
+
   if upto < 11:
     # Handle the primes below 11 to simplify the general code below
     # (by removing the need to handle the few cases in which the index to
@@ -33,17 +38,17 @@ proc primes*[T: SomeInteger | SomeFloat](upto: T): Tensor[T] =
     # This is the minimum set of primes that we must handle, but we could
     # extend this list to make the calculation faster for more of the
     # smallest primes
-    let prime_candidates = [2, 3, 5, 7].toTensor
+    let prime_candidates = [2.T, 3, 5, 7].toTensor()
     return prime_candidates[prime_candidates <=. upto]
 
   # General algorithm (valid for numbers higher than 10)
-  let prime_candidates = arange(3, upto+1, 2)
-  var isprime = ones[bool]((upto - 1) div 2)
+  let prime_candidates = arange(3.T, T(upto + 1), 2.T)
+  var isprime = ones[bool]((upto.int - 1) div 2)
   let max_possible_factor_idx = int(sqrt(upto.float)) div 2
   for factor in prime_candidates[_ ..< max_possible_factor_idx]:
-    if isprime[(factor-2) div 2]:
-      isprime[(factor*3-2) div 2 .. _ | factor] = false
+    if isprime[(factor.int - 2) div 2]:
+      isprime[(factor.int * 3 - 2) div 2 .. _ | factor.int] = false
 
   # Note that 2 is missing from the result, so it must be manually added to
   # the front of the result tensor
-  return [2].toTensor().append(prime_candidates[isprime])
+  return [2.T].toTensor().append(prime_candidates[isprime])
