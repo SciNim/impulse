@@ -150,3 +150,52 @@ proc factor*[T: SomeInteger | SomeFloat](n: T): Tensor[T] =
     # and we can start a new iteration
   result = sorted(result)
 
+proc isprimeImpl[T: SomeInteger | SomeFloat](n: T, candidate_factors: Tensor[int]): bool {.inline.} =
+  ## Actual implementation of the isprime check
+  # This function is optimized for speed in 2 ways:
+  # 1. By first rejecting all non-whole float numbers and then performing the
+  #    actual isprime check using integers (which is faster than using floats)
+  # 2. By receving a pre-calculated tensor of candidate_factors. This does not
+  #    speed up the check of a single value, but it does speed up the check of
+  #    a tensor of values. Note that because of #1 the candidate_factors must
+  #    be a tensor of ints (even if the number being checked is a float)
+  when T is SomeFloat:
+    if floor(n) != n:
+      return false
+    let n = int(n)
+  result = (n > 1) and all(n mod candidate_factors[candidate_factors <. n])
+
+proc isprime*[T: SomeInteger | SomeFloat](n: T): bool =
+  ## Check whether the input is a prime number
+  ##
+  ## Only positive values higher than 1 can be primes (i.e. we exclude 1 and -1
+  ## which are sometimes considered primes).
+  ##
+  ## Note that this function also works with floats, which are considered
+  ## non-prime when they are not whole numbers.
+  # Note that we do here some checks that are repeated later inside of
+  # `isprimeImpl`. This is done to avoid the unnecessary calculation of
+  # the `candidate_factors` tensor in those cases
+  if n <= 1:
+    return false
+  when T is int64:
+    if n > T(maximumConsecutiveFloat64Int):
+      raise newException(ValueError,
+        "Value (" & $n & ") is too large to be factorized")
+  elif T is SomeFloat:
+    if floor(n) != n:
+      return false
+  var candidate_factors = primes(int(ceil(sqrt(float(n)))))
+  isprimeImpl(n, candidate_factors)
+
+proc isprime*[T: SomeInteger | SomeFloat](t: Tensor[T]): Tensor[bool] =
+  ## Element-wise check if the input values are prime numbers
+  result = zeros[bool](t.len)
+  # Pre-calculate the list of primes that will be used for the element-wise
+  # isprime check and then call isprimeImpl on each element
+  # Note that the candidate_factors must be a tensor of ints (for performance
+  # reasons)
+  var candidate_factors = primes(int(ceil(sqrt(float(max(t.flatten()))))))
+  for idx, val in t.enumerate():
+    result[idx] = isprimeImpl(val, candidate_factors)
+  return result.reshape(t.shape)

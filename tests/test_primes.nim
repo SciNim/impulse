@@ -108,7 +108,27 @@ proc test_factor() =
       # This is what should happen!
       discard
 
+proc test_isprime() =
+  test "isprime":
+    check: isprime(7) == true
+    check: isprime(7.0) == true
+    check: isprime(7.5) == false
+    check: isprime(1) == false
+    check: isprime(0) == false
+    check: isprime(-1) == false
+    let t = [
+      [-1, 0, 2,  4],
+      [ 5, 6, 7, 11]
+    ].toTensor
+    let expected = [
+      [false, false, true, false],
+      [ true, false, true,  true]
+    ].toTensor
+    check: isprime(t) == expected
+    check: isprime(t.asType(float)) == expected
+
 # Run the tests
 suite "Primes":
   test_primes()
   test_factor()
+  test_isprime()
