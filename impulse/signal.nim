@@ -5,6 +5,7 @@
 
 import arraymancer
 import std / strformat
+import std / strutils
 
 # Constants used to implement the Modified Bessel function of the first kind
 let i0A_values = [
@@ -592,3 +593,217 @@ proc upfirdn*[T](t, h: Tensor[T], up = 1, down = 1): Tensor[T] {.noinit.} =
   ## #     0      1    2.5      4    5.5      7    8.5
   t.upsample(up).convolve(h, mode = ConvolveMode.full, down = down)
 
+func reduce_resampling_rates*(up, down: int): (int, int) =
+  ## Reduce resampling rates to the minimum values that give the same up/down ratio
+  ##
+  ## This function reduces a pair of `up` / `down` sampling rates to the
+  ## minimum equivalent values (by dividing them by their greatest common
+  ## divisor). This is useful to reduce the number of operations required to
+  ## resample a tensor (since what really matters is the `up / down` ratio, not
+  ## the actual values of `up` and `down`).
+  ##
+  ## Note that there are 2 versions of the `resample` function. The version that
+  ## does _not_ take a filter tensor automatically calls this function. However,
+  ## the version that takes a filter tensor as its second argument does not.
+  let g = gcd(up, down)
+  let up = floorDiv(up, g)
+  let down = floorDiv(down, g)
+  result = (up, down)
+
+proc generate_resampling_filter*[T](
+      up: int, down: int, fir_order_factor = 10, beta = 5.0
+    ): Tensor[T] =
+  ## Generate a resampling filter
+  ##
+  ## Generate a resampling filter that is appropriate given an `up` / `down`
+  ## sampling pair, a `fir_order_factor` and a kaiser window `beta` value.
+  ##
+  ## Inputs:
+  ##   - up: Upsampling rate
+  ##   - down: Downsampling rate
+  ##   - fir_order_factor: A factor used to calculate the generated filter order,
+  ##                       which will be `2 * fir_order_factor * max(up, down)`.
+  ##                       If set to 0, the generated filter will be a simple
+  ##                       rectangular signal which can perform a step upsample
+  ##   - beta: The beta value used to generate the kaiser window that is
+  ##           applied to the filter
+  ##
+  ## Result:
+  ##   - Tensor of filter coefficients
+  if fir_order_factor == 0:
+    # Step upsample
+    return ones[T](up)
+
+  # Calculate the cut-off frequency and the filter order
+  let max_ratio = max(up, down)
+  let fc = 1.0 / max_ratio.float
+  let filter_order = 2 * fir_order_factor * max_ratio
+  # Design the base filter
+  result = firls(filter_order,
+    [0.0, fc, fc, 1.0].toTensor,
+    [1.0, 1.0, 0.0, 0.0].toTensor)
+  # Apply the kaiser window (note that the filter length is one more than
+  # its order, so the window length must also be the filter order plus 1)
+  result *.= kaiser(filter_order + 1, beta)
+  # And finally normalize the filter
+  result *.= up.float / result.sum
+
+proc adjust_filter_position[T](
+    h: Tensor[T], input_len, result_len, up, down: int):
+    tuple[h: Tensor[T], total_delay: int] =
+  ## Internal function which is used to adjust the position of the filter
+  ## (by adding leading and trailing zeros) so that:
+  ## - The downsampling procedure takes samples that correspond to the filter
+  ##   middle point
+  ## - The result length matches what is expected
+  ## This function also calculates the total delay (of the upsample, filter
+  ## and downsample operation), which is the number of samples that we will
+  ## need to remove (after downsampling) to align the output with the input
+
+  # When we downsample, we want to take those samples that "correspond" to the
+  # filter middle point. To do so we add some leading zeros to the filter:
+  var filter_middle_point = (h.len.float - 1.0) / 2.0
+  let num_leading_zeros = floor(down.float - (filter_middle_point.floorMod(down.float))).int
+  result.h = concat(zeros[T](num_leading_zeros), h, axis = 0)
+  # Obviously, this shifts the actual position of the filter middle point
+  filter_middle_point = filter_middle_point + num_leading_zeros.float
+
+  # Calculate the total (post downsampling) filter delay, which we will have
+  # to remove from the result in order to compensate for it
+  result.total_delay = floor(ceil(filter_middle_point) / down.float).int
+
+  # Add trailing zeros to the filter so that the actual output length
+  # matches our target result length
+  # This can only be done iteratively due to the ceil operations involved
+  # To do so:
+  # 1. Calculate the length that the output of the filter, before downsampling
+  # (i.e. after upsampling and the FIR) would have _before_ adding any zeros
+  let upsampled_filtered_tensor_len = (input_len - 1) * up + result.h.len
+  # 2. Keep adding zeros until the result length would exceed the target
+  var num_trailing_zeros = 0
+  while result.total_delay + result_len >=
+      ceil((upsampled_filtered_tensor_len + num_trailing_zeros) / down).int:
+    num_trailing_zeros += 1
+  # 3. Finally add the zeros that we calculated
+  result.h = concat(result.h, zeros[T](num_trailing_zeros), axis = 0)
+
+proc resample*[T](t, h: Tensor[T], up = 1, down = 1): Tensor[T] =
+  ## Resample a Tensor at `up / down` times using a particular FIR filter
+  ##
+  ## This is basically a wrapper around `upfirdn`. The main difference
+  ## with that procedure is that resample only keeps the `up * down * t.len`
+  ## "central" samples (i.e. it takes into account the delay introduced by
+  ## the filter).
+  ##
+  ## Inputs:
+  ##   - t: Rank-1 input tensor
+  ##   - h: Rank-1 tensor of resampling filter coefficients
+  ##   - up: Upsampling rate
+  ##   - down: Downsampling rate
+  ##
+  ## Result:
+  ##   - Rank-1 resampled tensor
+  ##
+  ## Notes:
+  ##   - Contrary to the version of this function which doesn't take an
+  ##     explicit filter, this version does not automatically reduce the
+  ##     upsampling and downsampling ratios. If you want to reduce them
+  ##     you must manually use `reduce_resampling_rates` before calling
+  ##     this function.
+  ##
+  ## Example:
+  ## ```nim
+  ## let t = [1.0 , 1.2, -0.3, -1.0, 2.0].toTensor
+  ## let (up, down) = reduce_resampling_rates(6, 4)
+  ## let h = generate_resampling_filter[float](up = up, down = up)
+  ## echo resample(t, up = up, down = up)
+  ## # Tensor[system.float] of shape "[8]" on backend "Cpu"
+  ## #   1.00061   1.22699   1.00038  -0.300182   -1.44448   0.114778   2.00121   0.917579
+  ## ```
+  if up == 1 and down == 1:
+    return t.clone()
+
+  var h = h.squeeze
+  if h.rank != 1:
+    raise newException(ValueError,
+      "Squeezed filter rank (" & $h.rank & ") must be 1")
+
+  # Calculate the _target_ result length
+  let result_len = ceil(t.len * up / down).int
+
+  # Adjust the filter position to align the input with the output and
+  # calculate the total delay _after_ downsampling
+  var total_delay = 0
+  (h, total_delay) = adjust_filter_position(h, t.len, result_len, up, down)
+
+  # Perform the actual upsampling, FIR filtering and downsampling
+  result = t.upfirdn(h, up = up, down = down)
+
+  # Remove the trailing and leading samples
+  # to align the result with the input signal
+  result = result[total_delay.int ..< (total_delay.int + result_len)]
+
+proc resample*[T](t: Tensor[T], up = 1, down = 1, fir_order_factor = 10, beta = 5.0): Tensor[T] =
+  ## Resample a Tensor at `up / down` times its original sampling rate
+  ##
+  ## The resampling is performed using a polyphase anti-aliasing FIR filter
+  ## that is designed according to the selected `fir_order_factor` and a Kaiser
+  ## window of the given `beta`.
+  ##
+  ## Inputs:
+  ##   - t: Rank-1 input tensor
+  ##   - up: Upsampling rate
+  ##   - down: Downsampling rate
+  ##   - fir_order_factor: A factor used to calculate the generated filter order,
+  ##                       which will be `2 * fir_order_factor * max(up, down)`.
+  ##                       If set to 0, the generated filter will be a simple
+  ##                       rectangular signal which can perform a step upsample
+  ##   - beta: The beta value used to generate the Kaiser window that is
+  ##           applied to the filter
+  ##
+  ## Result:
+  ##   - Rank-1 resampled tensor
+  ##
+  ## Note:
+  ##   - The `up` and `down` rates are automatically "reduced" (by calling
+  ##     `reduce_resampling_rates`, which divides them by their greatest
+  ##     common denominator) before the resampling operation (and the filter
+  ##     generation) is performed. This can reduce the number of calculations
+  ##     significantly. If you want to avoid that "reduction", generate the
+  ##     filter using `generate_resampling_filter` first, and then call the
+  ##     `resample` procedure that takes the filter as its input (since that
+  ##     version does not reduce the ratios automatically). You can find an
+  ##     example of how to do this on the examples section of that procedure's
+  ##     documentation.
+  ##
+  ## Example:
+  ## ```nim
+  ## let t = [1.0 , 1.2, -0.3, -1.0, 2.0].toTensor
+  ## echo resample(t, up = 3, down = 2)
+  ## # Tensor[system.float] of shape "[8]" on backend "Cpu"
+  ## #   1.00061   1.22699   1.00038  -0.300182   -1.44448   0.114778   2.00121   0.917579
+  ##
+  ## # Any `up` and `down` values that have the same ratio give the same result
+  ## echo resample(t, up = 6, down = 4)
+  ## # Tensor[system.float] of shape "[8]" on backend "Cpu"
+  ## #   1.00061   1.22699   1.00038  -0.300182   -1.44448   0.114778   2.00121   0.917579
+  ## ```
+  if up == down:
+    # No need to filter if the upsampling and downsampling ratios match
+    # Note that this is only true when no specific filter is provided
+    return t.clone()
+
+  # What matters is the _ratio_ of the uplink and downlink factors, so we can
+  # reduce the up and down factors before calculating the anti-aliasing filter
+  # and performing the actual resampling operation in order to save computation
+  # time on really long signals
+  let (up, down) = reduce_resampling_rates(up, down)
+
+  # Generate the filter coefficients
+  when T is Complex:
+    let h = complex(generate_resampling_filter[typeof(T.re)](up, down, fir_order_factor, beta))
+  else:
+    let h = generate_resampling_filter[T](up, down, fir_order_factor, beta)
+
+  # And resample the input signal
+  resample(t, h, up = up, down = down)
