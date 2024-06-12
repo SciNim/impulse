@@ -15,31 +15,29 @@ on:
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
-        branch: [version-1-6, devel]
-        target: [linux, macos, windows]
-        include:
-          - target: linux
-            builder: ubuntu-latest
-          - target: macos
-            builder: macos-latest
-          - target: windows
-            builder: windows-latest
-    name: '${{ matrix.target }} (${{ matrix.branch }})'
-    runs-on: ${{ matrix.builder }}
+        nim:
+          - '1.6.x'
+          - '2.0.x'
+          - 'stable'
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macOS-latest
+    name: '${{ matrix.nim }} (${{ matrix.os }})'
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: impulse
 
-      - name: Setup Nim
-        uses: alaviss/setup-nim@0.1.1
+      - name: Setup nim
+        uses: jiro4989/setup-nim-action@v1
         with:
-          path: nim
-          version: ${{ matrix.branch }}
+          nim-version: ${{ matrix.nim }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup MSYS2 (Windows)
         if: ${{matrix.target == 'windows'}}
@@ -54,7 +52,6 @@ jobs:
         shell: msys2 {0}
         run: |
           pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm mingw-w64-x86_64-cairo
           pacman -S --needed --noconfirm mingw-w64-x86_64-lapack
 
       - name: Setup nimble & deps
