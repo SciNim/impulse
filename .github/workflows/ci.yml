@@ -64,8 +64,16 @@ jobs:
           nimble refresh -y
           nimble install -y
 
-      - name: Run tests
+      - name: Run tests (Linux & OSX)
+        if: ${{matrix.target != 'windows'}}
         shell: bash
+        run: |
+          cd impulse
+          nimble -y test
+
+      - name: Run tests (Windows)
+        if: ${{matrix.target == 'windows'}}
+        shell: msys2 {0}
         run: |
           cd impulse
           nimble -y test
