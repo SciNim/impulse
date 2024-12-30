@@ -17,6 +17,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         nim:
           - '1.6.x'
@@ -40,7 +41,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup MSYS2 (Windows)
-        if: ${{matrix.target == 'windows'}}
+        if: ${{matrix.os == 'windows'}}
         uses: msys2/setup-msys2@v2
         with:
           path-type: inherit
@@ -48,7 +49,7 @@ jobs:
           install: base-devel git mingw-w64-x86_64-toolchain
 
       - name: Install dependencies (Windows)
-        if: ${{matrix.target == 'windows'}}
+        if: ${{matrix.os == 'windows'}}
         shell: msys2 {0}
         run: |
           pacman -Syu --noconfirm
@@ -62,14 +63,14 @@ jobs:
           nimble install -y
 
       - name: Run tests (Linux & OSX)
-        if: ${{matrix.target != 'windows'}}
+        if: ${{matrix.os != 'windows'}}
         shell: bash
         run: |
           cd impulse
           nimble -y test
 
       - name: Run tests (Windows)
-        if: ${{matrix.target == 'windows'}}
+        if: ${{matrix.os == 'windows'}}
         shell: msys2 {0}
         run: |
           cd impulse
@@ -78,7 +79,7 @@ jobs:
       - name: Build docs
         if: >
           github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-          matrix.target == 'linux' && matrix.branch == 'devel'
+          matrix.os == 'linux' && matrix.branch == 'devel'
         shell: bash
         run: |
           cd impulse
@@ -95,7 +96,7 @@ jobs:
       - name: Publish docs
         if: >
           github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-          matrix.target == 'linux' && matrix.branch == 'devel'
+          matrix.os == 'linux' && matrix.branch == 'devel'
         uses: crazy-max/ghaction-github-pages@v1
         with:
           build_dir: impulse/docs
